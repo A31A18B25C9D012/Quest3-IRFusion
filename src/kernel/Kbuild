@@ -1,0 +1,1 @@
+obj-m += ir_uvc_bridge.o

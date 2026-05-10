@@ -1,0 +1,42 @@
+#version 450
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(binding = 0, rgba8) uniform readonly  image2D hud_in;
+layout(binding = 1, rgba8) uniform writeonly image2D lens_out;
+
+layout(push_constant) uniform PC {
+    float k1;
+    float k2;
+    int   width;
+    int   height;
+} pc;
+
+void main() {
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    if (coord.x >= pc.width || coord.y >= pc.height) return;
+
+    float half_w    = float(pc.width)  * 0.5;
+    float half_h    = float(pc.height) * 0.5;
+    float half_diag = sqrt(half_w * half_w + half_h * half_h);
+
+    float nx = (float(coord.x) - half_w) / half_diag;
+    float ny = (float(coord.y) - half_h) / half_diag;
+
+    float r2     = nx * nx + ny * ny;
+    float r4     = r2 * r2;
+    float factor = 1.0 + pc.k1 * r2 + pc.k2 * r4;
+
+    float src_x = nx * factor * half_diag + half_w;
+    float src_y = ny * factor * half_diag + half_h;
+
+    ivec2 src = ivec2(int(src_x + 0.5), int(src_y + 0.5));
+
+    vec4 color;
+    if (src.x >= 0 && src.x < pc.width && src.y >= 0 && src.y < pc.height) {
+        color = imageLoad(hud_in, src);
+    } else {
+        color = vec4(0.0, 0.0, 0.0, 1.0);
+    }
+
+    imageStore(lens_out, coord, color);
+}

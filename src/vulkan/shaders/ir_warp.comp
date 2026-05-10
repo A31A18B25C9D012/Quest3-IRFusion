@@ -1,0 +1,41 @@
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(binding = 0, rgba8) uniform readonly image2D ir_input;
+layout(binding = 1, rgba8) uniform writeonly image2D ir_output;
+
+layout(push_constant) uniform PC {
+    float h00; float h01; float h02;
+    float h10; float h11; float h12;
+    float h20; float h21; float h22;
+    int out_w;
+    int out_h;
+} pc;
+
+void main() {
+    ivec2 out_coord = ivec2(gl_GlobalInvocationID.xy);
+    if (out_coord.x >= pc.out_w || out_coord.y >= pc.out_h) return;
+
+    float px = float(out_coord.x);
+    float py = float(out_coord.y);
+
+    float qw = pc.h20 * px + pc.h21 * py + pc.h22;
+    if (abs(qw) < 1e-6) {
+        imageStore(ir_output, out_coord, vec4(0.0));
+        return;
+    }
+    float qx = (pc.h00 * px + pc.h01 * py + pc.h02) / qw;
+    float qy = (pc.h10 * px + pc.h11 * py + pc.h12) / qw;
+
+    ivec2 ir_size = imageSize(ir_input);
+    ivec2 src = ivec2(int(qx + 0.5), int(qy + 0.5));
+
+    if (src.x < 0 || src.x >= ir_size.x || src.y < 0 || src.y >= ir_size.y) {
+        imageStore(ir_output, out_coord, vec4(0.0));
+        return;
+    }
+
+    vec4 val = imageLoad(ir_input, src);
+    imageStore(ir_output, out_coord, val);
+}

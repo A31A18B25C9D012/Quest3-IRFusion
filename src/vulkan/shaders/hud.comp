@@ -1,0 +1,204 @@
+#version 450
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(binding = 0, rgba8) uniform readonly  image2D composite_in;
+layout(binding = 1, rgba8) uniform writeonly image2D hud_out;
+
+layout(push_constant) uniform PC {
+    int   mode;
+    float ir_intensity;
+    int   has_temperature;
+    int   ir_on;
+    int   crosshair_on;
+    float crosshair_dist;
+    int   settings_open;
+    int   settings_cursor;
+    int   ir_res_preset;
+    int   hud_enabled;
+    int   width;
+    int   height;
+} pc;
+
+const vec4 BRIGHT = vec4(0.0, 1.0, 0.2, 1.0);
+const vec4 DIM    = vec4(0.0, 0.35, 0.08, 1.0);
+
+const uint FONT[10] = uint[10](
+    0x699996u, 0x262227u, 0x69124Fu, 0x691316u, 0x99F111u,
+    0xF8E196u, 0x68F996u, 0xF12444u, 0x696996u, 0x699716u
+);
+
+const uint LETTERS[14] = uint[14](
+    0xE9999Eu,
+    0xF8E88Fu,
+    0xF8E888u,
+    0x99F999u,
+    0xF6666Fu,
+    0x9F9999u,
+    0x9DB999u,
+    0x699996u,
+    0xE9ECA9u,
+    0x78611Eu,
+    0xF44444u,
+    0x999996u,
+    0x996699u,
+    0x842480u
+);
+
+const int LD=0,LE=1,LF=2,LH=3,LI=4,LM=5,LN=6,LO=7,LR=8,LS=9,LT=10,LU=11,LX=12,LCAR=13;
+
+bool font_px(int d, int col, int row) {
+    if (d<0||d>9||col<0||col>3||row<0||row>5) return false;
+    return ((FONT[d]>>uint((5-row)*4+(3-col)))&1u)!=0u;
+}
+
+bool letter_px(int idx, int col, int row) {
+    if (idx<0||idx>13||col<0||col>3||row<0||row>5) return false;
+    return ((LETTERS[idx]>>uint((5-row)*4+(3-col)))&1u)!=0u;
+}
+
+bool lhit(int idx, int ox, int oy, int x, int y) {
+    int gx=x-ox, gy=y-oy;
+    return gx>=0&&gx<4&&gy>=0&&gy<6&&letter_px(idx,gx,gy);
+}
+
+bool dhit(int d, int ox, int oy, int x, int y) {
+    int gx=x-ox, gy=y-oy;
+    return gx>=0&&gx<4&&gy>=0&&gy<6&&font_px(d,gx,gy);
+}
+
+bool near_seg(int px, int py, int ax, int ay, int bx, int by) {
+    int dx=bx-ax,dy=by-ay,ex=px-ax,ey=py-ay;
+    int len2=dx*dx+dy*dy;
+    if (len2==0) return ex*ex+ey*ey<=2;
+    int t=clamp(ex*dx+ey*dy,0,len2);
+    int nx=ex*len2-t*dx,ny=ey*len2-t*dy;
+    return 4*(nx*nx+ny*ny)<=9*len2*len2;
+}
+
+void main() {
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    int w=pc.width, h=pc.height;
+    if (coord.x>=w||coord.y>=h) return;
+
+    int x=coord.x, y=coord.y;
+    vec4 src = imageLoad(composite_in, coord);
+    vec4 color = src;
+    bool lit=false, dim=false;
+
+    int cx=w/2, cy=h/2;
+
+    if (pc.settings_open != 0) {
+        color = vec4(src.rgb * 0.22, 1.0);
+
+        int pl=cx-150, pr=cx+150, pt=cy-100, pb=cy+100;
+
+        if (x>=pl&&x<=pr&&y>=pt&&y<=pb) {
+            if (x==pl||x==pr||y==pt||y==pb) lit=true;
+        }
+
+        if (!lit&&y==pt+18&&x>=pl+1&&x<=pr-1) lit=true;
+
+        int ROWS[4] = int[4](pt+30, pt+62, pt+94, pt+126);
+
+        for (int i=0; i<4&&!lit; i++) {
+            int iy=ROWS[i];
+            if (y<iy||y>iy+5) continue;
+
+            if (i==pc.settings_cursor&&lhit(LCAR,pl+8,iy,x,y)) { lit=true; break; }
+
+            int lx=pl+24;
+            if (i==0&&(lhit(LM,lx,iy,x,y)||lhit(LO,lx+5,iy,x,y)||lhit(LD,lx+10,iy,x,y)||lhit(LE,lx+15,iy,x,y))) { lit=true; break; }
+            if (i==1&&(lhit(LR,lx,iy,x,y)||lhit(LE,lx+5,iy,x,y)||lhit(LS,lx+10,iy,x,y))) { lit=true; break; }
+            if (i==2&&(lhit(LH,lx,iy,x,y)||lhit(LU,lx+5,iy,x,y)||lhit(LD,lx+10,iy,x,y))) { lit=true; break; }
+            if (i==3&&(lhit(LE,lx,iy,x,y)||lhit(LX,lx+5,iy,x,y)||lhit(LI,lx+10,iy,x,y)||lhit(LT,lx+15,iy,x,y))) { lit=true; break; }
+
+            int vx=pl+155;
+            if (i==0) {
+                if (dhit(pc.mode,vx,iy,x,y)) lit=true;
+            }
+            if (i==1) {
+                for (int p=0; p<3&&!lit; p++) {
+                    int bx0=vx+p*16, bx1=bx0+12;
+                    if (x>=bx0&&x<=bx1&&y>=iy&&y<=iy+6) {
+                        bool border=(x==bx0||x==bx1||y==iy||y==iy+6);
+                        if (border||p==pc.ir_res_preset) lit=true;
+                    }
+                }
+            }
+            if (i==2) {
+                if (pc.hud_enabled!=0) {
+                    if (lhit(LO,vx,iy,x,y)||lhit(LN,vx+5,iy,x,y)) lit=true;
+                } else {
+                    if (lhit(LO,vx,iy,x,y)||lhit(LF,vx+5,iy,x,y)||lhit(LF,vx+10,iy,x,y)) lit=true;
+                }
+            }
+        }
+
+        if (lit) color=BRIGHT;
+        imageStore(hud_out, coord, color);
+        return;
+    }
+
+    if (pc.hud_enabled==0) {
+        imageStore(hud_out, coord, src);
+        return;
+    }
+
+    int bw=130, bh=18, bgap=6;
+    int bx0=10, bx1=bx0+bw;
+    int panel_h=4*bh+3*bgap;
+    int by_end=h-10, by_start=by_end-panel_h;
+
+    if (x>=bx0&&x<=bx1&&y>=by_start&&y<=by_end) {
+        for (int i=0; i<4; i++) {
+            int y0=by_start+i*(bh+bgap), y1=y0+bh-1;
+            if (y<y0||y>y1) continue;
+            if (x!=bx0&&x!=bx1&&y!=y0&&y!=y1) break;
+            bool on;
+            if (i==0) on=true;
+            else if (i==1) on=(pc.ir_on!=0);
+            else if (i==2) on=(pc.has_temperature!=0);
+            else on=true;
+            if (on) lit=true; else dim=true;
+            break;
+        }
+    }
+
+    if (pc.crosshair_on!=0&&!lit) {
+        int arm=12;
+        if (near_seg(x,y,cx,cy,cx-arm,cy+arm)||near_seg(x,y,cx,cy,cx+arm,cy+arm))
+            lit=true;
+    }
+
+    if (pc.crosshair_on!=0&&!lit) {
+        int dist_m=int(clamp(pc.crosshair_dist,0.0,999.0)+0.5);
+        int tx=w-10-19, ty=h-10-6;
+        if (y>=ty&&y<ty+6) {
+            int d0=(dist_m/100)%10, d1=(dist_m/10)%10, d2=dist_m%10;
+            int gx,gy;
+            gx=x-tx;    gy=y-ty; if (gx>=0&&gx<4&&font_px(d0,gx,gy)) lit=true;
+            gx=x-(tx+5);gy=y-ty; if (!lit&&gx>=0&&gx<4&&font_px(d1,gx,gy)) lit=true;
+            gx=x-(tx+10);gy=y-ty;if (!lit&&gx>=0&&gx<4&&font_px(d2,gx,gy)) lit=true;
+            if (!lit) {
+                int mx=x-(tx+15), my=y-ty;
+                if (mx>=0&&mx<=4&&my>=0&&my<=5) {
+                    bool mpx=(mx==0||mx==4)||(my==0&&(mx==1||mx==3))||(my==1&&mx==2);
+                    if (mpx) lit=true;
+                }
+            }
+        }
+    }
+
+    if (!lit) {
+        int br_x0=w-24, br_x1=w-14, br_y0=h/3, br_y1=2*h/3;
+        if (x>=br_x0&&x<=br_x1&&y>=br_y0&&y<=br_y1) {
+            int fill_y=br_y1-int(float(br_y1-br_y0)*clamp(pc.ir_intensity,0.0,1.0));
+            if (x==br_x0||x==br_x1||y==br_y0||y==br_y1||y>=fill_y) lit=true;
+        }
+    }
+
+    if      (lit) color=BRIGHT;
+    else if (dim) color=DIM;
+
+    imageStore(hud_out, coord, color);
+}

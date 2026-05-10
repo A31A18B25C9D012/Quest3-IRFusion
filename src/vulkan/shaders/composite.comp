@@ -1,0 +1,35 @@
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(binding = 0, rgba8) uniform readonly image2D rgb_input;
+layout(binding = 1, rgba8) uniform readonly image2D ir_warped;
+layout(binding = 2, r32f)  uniform readonly image2D depth_map;
+layout(binding = 3, rgba8) uniform writeonly image2D composite_out;
+
+layout(push_constant) uniform PC {
+    float alpha;
+    float beta;
+    float gamma;
+    float depth_k;
+    int out_w;
+    int out_h;
+} pc;
+
+void main() {
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    if (coord.x >= pc.out_w || coord.y >= pc.out_h) return;
+
+    vec4 C_rgb = imageLoad(rgb_input, coord);
+    vec4 I_ir  = imageLoad(ir_warped, coord);
+    float depth = imageLoad(depth_map, coord).r;
+
+    float depth_weight = 1.0 / (1.0 + depth * pc.depth_k);
+    vec4 F_ir = I_ir * depth_weight;
+
+    float ir_lum = I_ir.r * 0.299 + I_ir.g * 0.587 + I_ir.b * 0.114;
+    float edge_val = imageLoad(depth_map, coord).r;
+
+    vec4 C_final = pc.alpha * C_rgb + pc.beta * F_ir + pc.gamma * vec4(ir_lum);
+    imageStore(composite_out, coord, clamp(C_final, 0.0, 1.0));
+}

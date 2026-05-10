@@ -1,0 +1,44 @@
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(binding = 0, rgba8) uniform readonly image2D ir_warped;
+layout(binding = 1, r32f)  uniform writeonly image2D edge_output;
+
+layout(push_constant) uniform PC {
+    int width;
+    int height;
+} pc;
+
+float luminance(vec4 c) {
+    return c.r * 0.299 + c.g * 0.587 + c.b * 0.114;
+}
+
+void main() {
+    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    if (coord.x >= pc.width || coord.y >= pc.height) {
+        if (coord.x < pc.width && coord.y < pc.height)
+            imageStore(edge_output, coord, vec4(0.0));
+        return;
+    }
+
+    if (coord.x < 1 || coord.y < 1 || coord.x >= pc.width - 1 || coord.y >= pc.height - 1) {
+        imageStore(edge_output, coord, vec4(0.0));
+        return;
+    }
+
+    float tl = luminance(imageLoad(ir_warped, coord + ivec2(-1, -1)));
+    float tc = luminance(imageLoad(ir_warped, coord + ivec2( 0, -1)));
+    float tr = luminance(imageLoad(ir_warped, coord + ivec2( 1, -1)));
+    float ml = luminance(imageLoad(ir_warped, coord + ivec2(-1,  0)));
+    float mr = luminance(imageLoad(ir_warped, coord + ivec2( 1,  0)));
+    float bl = luminance(imageLoad(ir_warped, coord + ivec2(-1,  1)));
+    float bc = luminance(imageLoad(ir_warped, coord + ivec2( 0,  1)));
+    float br = luminance(imageLoad(ir_warped, coord + ivec2( 1,  1)));
+
+    float Gx = -tl - 2.0 * ml - bl + tr + 2.0 * mr + br;
+    float Gy = -tl - 2.0 * tc - tr + bl + 2.0 * bc + br;
+    float mag = sqrt(Gx * Gx + Gy * Gy);
+
+    imageStore(edge_output, coord, vec4(clamp(mag, 0.0, 1.0)));
+}
