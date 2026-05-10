@@ -1,6 +1,6 @@
 # Hardware Bill of Materials
 
-All prices are approximate as of 2025 and subject to change. Verify
+All prices are approximate as of 2026 and subject to change. Verify
 current pricing at the listed vendors before ordering.
 
 ---
