@@ -210,7 +210,7 @@ environment variables.
 -    `make all`           - build all of the above
 -    `make push`          - push the service binary to the device via adb
 
-You can also find more infromtation on setting everything up [here](https://github.com/A31A18B25C9D012/Quest3-IRFusion/DOCS/SETUP.md)
+You can also find more infromtation on setting everything up [here](https://github.com/A31A18B25C9D012/Quest3-IRFusion/blob/main/DOCS/SETUP.md)
 
 RUNNING
 
