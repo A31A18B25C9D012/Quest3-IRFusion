@@ -1,9 +1,7 @@
-GOAL
-
 The goal of this project is to turn a Meta Quest 3 into a standalone
-night-vision and heat-vision headset. The Quest 3 has built-in infrared
+night vision and heat vision headset. The Quest 3 has built in infrared
 emitters on its front face that it uses for controller and hand tracking.
-By plugging in a near-infrared camera through the USB-C port, those
+By plugging in a near infrared camera through the USB C port, those
 same emitters illuminate the scene and the camera picks up the light,
 letting the user see in complete darkness. If a thermal camera is used
 instead, the user can see heat gradients and body heat without any
